@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>YT Music - iPhone</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+    </style>
+</head>
+<body class="bg-zinc-950 text-white min-h-screen">
+    <div class="max-w-xl mx-auto p-5">
+
+        <h1 class="text-3xl font-bold flex items-center gap-3 mb-8">
+            <i class="fas fa-music text-cyan-400"></i> YT Music
+        </h1>
+
+        <div class="mb-6 relative">
+            <input type="text" id="youtubeUrl" placeholder="Dán link YouTube..." 
+                   class="w-full bg-zinc-900 border border-zinc-700 rounded-2xl px-5 py-4 text-base pr-12">
+            <button onclick="clearUrl()" id="clearBtn" class="clear-btn hidden absolute right-4 top-1/2 -translate-y-1/2 text-gray-400">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+
+        <button onclick="addYouTube()" id="addBtn"
+                class="w-full py-4 bg-red-600 hover:bg-red-500 rounded-2xl font-medium text-lg mb-6">
+            ➕ Thêm vào Playlist
+        </button>
+
+        <div class="mb-6">
+            <div class="flex justify-between mb-3">
+                <h2 class="text-xl font-semibold">Playlist (<span id="count">0</span>)</h2>
+                <button onclick="clearPlaylist()" class="text-red-400">Xóa hết</button>
+            </div>
+            <div id="playlist" class="space-y-2"></div>
+        </div>
+    </div>
+
+    <div id="player" class="fixed bottom-0 left-0 right-0 bg-zinc-900 border-t border-zinc-700 p-4 hidden">
+        <div class="max-w-xl mx-auto">
+            <h3 id="title" class="font-medium text-lg mb-2"></h3>
+            <div id="ytContainer"></div>
+        </div>
+    </div>
+
+    <script>
+        let playlist = JSON.parse(localStorage.getItem('grokPlaylist_iPhone')) || [];
+        let currentIndex = -1;
+
+        function savePlaylist() {
+            localStorage.setItem('grokPlaylist_iPhone', JSON.stringify(playlist));
+        }
+
+        async function getVideoTitle(videoId) {
+            try {
+                const res = await fetch(`https://www.youtube.com/oembed?url=https://youtube.com/watch?v=${videoId}&format=json`);
+                const data = await res.json();
+                return data.title;
+            } catch(e) {
+                return "YouTube Video";
+            }
+        }
+
+        async function addYouTube() {
+            const url = document.getElementById('youtubeUrl').value.trim();
+            if (!url) return alert("Vui lòng dán link YouTube!");
+
+            const addBtn = document.getElementById('addBtn');
+            addBtn.innerHTML = "Đang xử lý...";
+            addBtn.disabled = true;
+
+            let videoId = url.split('v=')[1] || url.split('/').pop().split('?')[0];
+            if (!videoId) videoId = url.split('/').pop();
+
+            const title = await getVideoTitle(videoId);
+
+            playlist.push({ type: 'youtube', id: videoId, title: title });
+            savePlaylist();
+            renderPlaylist();
+            playTrack(playlist.length - 1);
+            clearUrl();
+
+            addBtn.innerHTML = "➕ Thêm vào Playlist";
+            addBtn.disabled = false;
+        }
+
+        function playTrack(index) {
+            currentIndex = index;
+            const track = playlist[index];
+            document.getElementById('title').textContent = track.title;
+            document.getElementById('player').classList.remove('hidden');
+
+            // Thử dùng Piped (có khả năng ít quảng cáo hơn)
+            document.getElementById('ytContainer').innerHTML = `
+                <iframe width="100%" height="260" 
+                        src="https://piped.video/embed/${track.id}?autoplay=1" 
+                        frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+            renderPlaylist();
+        }
+
+        // Các hàm còn lại giữ nguyên
+        function renderPlaylist() {
+            const container = document.getElementById('playlist');
+            container.innerHTML = '';
+            document.getElementById('count').textContent = playlist.length;
+
+            playlist.forEach((track, i) => {
+                const div = document.createElement('div');
+                div.className = `p-4 bg-zinc-900 rounded-2xl flex justify-between items-center ${currentIndex === i ? 'border border-cyan-400' : ''}`;
+                div.innerHTML = `<div class="flex-1 truncate">${i+1}. ${track.title}</div>
+                                 <button onclick="removeTrack(${i});event.stopImmediatePropagation()" class="text-red-400 text-2xl">×</button>`;
+                div.onclick = () => playTrack(i);
+                container.appendChild(div);
+            });
+        }
+
+        function clearUrl() {
+            document.getElementById('youtubeUrl').value = '';
+            document.getElementById('clearBtn').classList.add('hidden');
+        }
+
+        function removeTrack(i) {
+            if (confirm("Xóa bài này?")) {
+                playlist.splice(i, 1);
+                savePlaylist();
+                renderPlaylist();
+            }
+        }
+
+        function clearPlaylist() {
+            if (confirm("Xóa toàn bộ playlist?")) {
+                playlist = [];
+                savePlaylist();
+                renderPlaylist();
+                document.getElementById('player').classList.add('hidden');
+            }
+        }
+
+        document.getElementById('youtubeUrl').addEventListener('input', function() {
+            document.getElementById('clearBtn').classList.toggle('hidden', this.value.trim() === '');
+        });
+
+        renderPlaylist();
+    </script>
+</body>
+</html>
