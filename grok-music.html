@@ -8,13 +8,6 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
-        .clear-btn {
-            position: absolute;
-            right: 16px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: #9ca3af;
-        }
     </style>
 </head>
 <body class="bg-zinc-950 text-white min-h-screen">
@@ -24,12 +17,11 @@
             <i class="fas fa-music text-cyan-400"></i> Grok Music
         </h1>
 
-        <!-- Thêm YouTube -->
         <div class="mb-6 relative">
-            <input type="text" id="youtubeUrl" placeholder="Dán link YouTube ở đây..." 
+            <input type="text" id="youtubeUrl" placeholder="Dán link YouTube..." 
                    class="w-full bg-zinc-900 border border-zinc-700 rounded-2xl px-5 py-4 text-base pr-12">
-            <button onclick="clearUrl()" id="clearBtn" class="clear-btn hidden">
-                <i class="fas fa-times text-xl"></i>
+            <button onclick="clearUrl()" id="clearBtn" class="clear-btn hidden absolute right-4 top-1/2 -translate-y-1/2 text-gray-400">
+                <i class="fas fa-times"></i>
             </button>
         </div>
 
@@ -38,7 +30,6 @@
             ➕ Thêm vào Playlist
         </button>
 
-        <!-- Playlist -->
         <div class="mb-6">
             <div class="flex justify-between mb-3">
                 <h2 class="text-xl font-semibold">Playlist (<span id="count">0</span>)</h2>
@@ -48,15 +39,12 @@
         </div>
     </div>
 
-    <!-- Player -->
     <div id="player" class="fixed bottom-0 left-0 right-0 bg-zinc-900 border-t border-zinc-700 p-4 hidden">
         <div class="max-w-xl mx-auto">
-            <h3 id="title" class="font-medium text-lg mb-2 line-clamp-1"></h3>
+            <h3 id="title" class="font-medium text-lg mb-2"></h3>
             <div id="ytContainer"></div>
         </div>
     </div>
-
-    <audio id="audio" class="hidden"></audio>
 
     <script>
         let playlist = JSON.parse(localStorage.getItem('grokPlaylist_iPhone')) || [];
@@ -68,52 +56,52 @@
 
         async function getVideoTitle(videoId) {
             try {
-                const res = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`);
+                const res = await fetch(`https://www.youtube.com/oembed?url=https://youtube.com/watch?v=${videoId}&format=json`);
                 const data = await res.json();
-                return data.title || `YouTube Track`;
-            } catch (e) {
-                return `YouTube Track ${playlist.length + 1}`;
+                return data.title;
+            } catch(e) {
+                return "YouTube Video";
             }
         }
 
         async function addYouTube() {
-            const urlInput = document.getElementById('youtubeUrl');
-            const url = urlInput.value.trim();
-            const addBtn = document.getElementById('addBtn');
-            
-            if (!url) {
-                alert("Vui lòng dán link YouTube!");
-                return;
-            }
+            const url = document.getElementById('youtubeUrl').value.trim();
+            if (!url) return alert("Vui lòng dán link YouTube!");
 
-            addBtn.innerHTML = 'Đang lấy tên bài...';
+            const addBtn = document.getElementById('addBtn');
+            addBtn.innerHTML = "Đang xử lý...";
             addBtn.disabled = true;
 
             let videoId = url.split('v=')[1] || url.split('/').pop().split('?')[0];
-            if (!videoId || videoId.length < 11) {
-                alert("Link YouTube không hợp lệ!");
-                addBtn.innerHTML = '➕ Thêm vào Playlist';
-                addBtn.disabled = false;
-                return;
-            }
+            if (!videoId) videoId = url.split('/').pop();
 
             const title = await getVideoTitle(videoId);
 
-            playlist.push({
-                type: 'youtube',
-                id: videoId,
-                title: title
-            });
-
+            playlist.push({ type: 'youtube', id: videoId, title: title });
             savePlaylist();
             renderPlaylist();
             playTrack(playlist.length - 1);
             clearUrl();
 
-            addBtn.innerHTML = '➕ Thêm vào Playlist';
+            addBtn.innerHTML = "➕ Thêm vào Playlist";
             addBtn.disabled = false;
         }
 
+        function playTrack(index) {
+            currentIndex = index;
+            const track = playlist[index];
+            document.getElementById('title').textContent = track.title;
+            document.getElementById('player').classList.remove('hidden');
+
+            // Thử dùng Piped (có khả năng ít quảng cáo hơn)
+            document.getElementById('ytContainer').innerHTML = `
+                <iframe width="100%" height="260" 
+                        src="https://piped.video/embed/${track.id}?autoplay=1" 
+                        frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+            renderPlaylist();
+        }
+
+        // Các hàm còn lại giữ nguyên
         function renderPlaylist() {
             const container = document.getElementById('playlist');
             container.innerHTML = '';
@@ -122,10 +110,8 @@
             playlist.forEach((track, i) => {
                 const div = document.createElement('div');
                 div.className = `p-4 bg-zinc-900 rounded-2xl flex justify-between items-center ${currentIndex === i ? 'border border-cyan-400' : ''}`;
-                div.innerHTML = `
-                    <div class="flex-1 truncate pr-2">${i+1}. ${track.title}</div>
-                    <button onclick="removeTrack(${i});event.stopImmediatePropagation()" class="text-red-400 text-2xl px-2">×</button>
-                `;
+                div.innerHTML = `<div class="flex-1 truncate">${i+1}. ${track.title}</div>
+                                 <button onclick="removeTrack(${i});event.stopImmediatePropagation()" class="text-red-400 text-2xl">×</button>`;
                 div.onclick = () => playTrack(i);
                 container.appendChild(div);
             });
@@ -136,27 +122,11 @@
             document.getElementById('clearBtn').classList.add('hidden');
         }
 
-        function playTrack(index) {
-            currentIndex = index;
-            const track = playlist[index];
-            document.getElementById('title').textContent = track.title;
-            document.getElementById('player').classList.remove('hidden');
-
-            if (track.type === 'youtube') {
-                document.getElementById('ytContainer').innerHTML = `
-                    <iframe width="100%" height="260" 
-                            src="https://www.youtube.com/embed/${track.id}?autoplay=1&controls=1&modestbranding=1&rel=0" 
-                            frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
-            }
-            renderPlaylist();
-        }
-
         function removeTrack(i) {
             if (confirm("Xóa bài này?")) {
                 playlist.splice(i, 1);
                 savePlaylist();
                 renderPlaylist();
-                if (currentIndex === i && playlist.length > 0) playTrack(0);
             }
         }
 
@@ -169,14 +139,11 @@
             }
         }
 
-        // Hiển thị nút xóa
         document.getElementById('youtubeUrl').addEventListener('input', function() {
             document.getElementById('clearBtn').classList.toggle('hidden', this.value.trim() === '');
         });
 
-        // Khởi tạo
         renderPlaylist();
-        console.log("%cGrok Music iPhone - Hiển thị tên bài thật", "color: cyan");
     </script>
 </body>
 </html>
