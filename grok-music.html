@@ -1,297 +1,119 @@
 <?php
-// index.php - Ứng dụng quản lý danh sách bài hát YouTube + Player đơn giản
-// Đặt file này lên server PHP, đảm bảo thư mục writable để tạo dsbaihat.txt
-
+// index.php
 $filename = 'dsbaihat.txt';
 $playlist = [];
+$success = '';
 
-// Đọc danh sách từ file
 if (file_exists($filename)) {
     $lines = file($filename, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-    foreach ($lines as $line) {
-        $url = trim($line);
-        if (!empty($url)) {
-            $playlist[] = $url;
-        }
-    }
+    $playlist = array_filter(array_map('trim', $lines));
 }
 
-// Xử lý thêm link
+// Thêm bài hát
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_url'])) {
     $new_url = trim($_POST['add_url']);
-    if (!empty($new_url) && strpos($new_url, 'youtube.com') !== false || strpos($new_url, 'youtu.be') !== false) {
-        // Chuẩn hóa link thành dạng watch?v=
+    if (!empty($new_url) && (strpos($new_url, 'youtube.com') !== false || strpos($new_url, 'youtu.be') !== false)) {
+        // Chuẩn hóa link
         if (strpos($new_url, 'youtu.be') !== false) {
-            $video_id = parse_url($new_url, PHP_URL_PATH);
-            $video_id = ltrim($video_id, '/');
-            $new_url = 'https://www.youtube.com/watch?v=' . $video_id;
+            $id = parse_url($new_url, PHP_URL_PATH);
+            $id = ltrim($id, '/');
+            $new_url = "https://www.youtube.com/watch?v=" . $id;
         }
         file_put_contents($filename, $new_url . PHP_EOL, FILE_APPEND | LOCK_EX);
+        $success = '✅ Đã thêm bài hát thành công!';
+    } else {
+        $success = '❌ Link không hợp lệ. Vui lòng dùng link YouTube.';
     }
-    header('Location: ' . $_SERVER['PHP_SELF']);
+    header("Location: " . $_SERVER['PHP_SELF'] . "?success=1");
     exit;
 }
 
-// Xử lý xóa link
+// Xóa bài
 if (isset($_GET['delete'])) {
     $index = (int)$_GET['delete'];
     if (isset($playlist[$index])) {
         unset($playlist[$index]);
-        // Ghi lại file
-        file_put_contents($filename, implode(PHP_EOL, $playlist) . (empty($playlist) ? '' : PHP_EOL));
+        file_put_contents($filename, implode(PHP_EOL, $playlist) . PHP_EOL);
     }
-    header('Location: ' . $_SERVER['PHP_SELF']);
+    header("Location: " . $_SERVER['PHP_SELF']);
     exit;
 }
 
-// Lấy video ID từ URL
 function get_youtube_id($url) {
-    $pattern = '/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/)([^&\n?#]+)/';
-    if (preg_match($pattern, $url, $matches)) {
-        return $matches[1];
-    }
-    return '';
+    preg_match('/(?:v=|youtu\.be\/|embed\/)([^&\n?#]+)/', $url, $matches);
+    return $matches[1] ?? '';
 }
 
-// Lấy title qua oEmbed
 function get_youtube_title($url) {
     $id = get_youtube_id($url);
-    if (empty($id)) return 'Không tìm thấy tiêu đề';
-    
-    $oembed_url = 'https://www.youtube.com/oembed?url=' . urlencode($url) . '&format=json';
-    $json = @file_get_contents($oembed_url);
-    if ($json) {
-        $data = json_decode($json, true);
-        return $data['title'] ?? 'Video YouTube';
-    }
-    return 'YouTube Video ' . $id;
+    if (empty($id)) return 'Không xác định';
+    $oembed = "https://www.youtube.com/oembed?url=" . urlencode($url) . "&format=json";
+    $data = @json_decode(@file_get_contents($oembed), true);
+    return $data['title'] ?? 'YouTube Video';
 }
-
-// Current video (mặc định video đầu tiên hoặc từ query)
-$current_id = isset($_GET['play']) ? (int)$_GET['play'] : 0;
-$current_url = $playlist[$current_id] ?? ($playlist[0] ?? '');
-$current_video_id = get_youtube_id($current_url);
 ?>
 
 <!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>YouTube Playlist - Chơi khi tắt màn hình</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Playlist</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap');
-        
-        body {
-            font-family: 'Roboto', sans-serif;
-            margin: 0;
-            padding: 0;
-            background: #0f0f0f;
-            color: #fff;
-            max-width: 100%;
-            overflow-x: hidden;
-        }
-        
-        header {
-            background: #1f1f1f;
-            padding: 15px;
-            text-align: center;
-            border-bottom: 1px solid #333;
-        }
-        
-        h1 {
-            margin: 0;
-            font-size: 1.4rem;
-        }
-        
-        .container {
-            padding: 15px;
-            max-width: 100%;
-        }
-        
-        .player-container {
-            position: relative;
-            padding-top: 56.25%; /* 16:9 Aspect Ratio */
-            background: #000;
-            margin-bottom: 20px;
-            border-radius: 8px;
-            overflow: hidden;
-        }
-        
-        .player-container iframe {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-        }
-        
-        form {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 20px;
-        }
-        
-        input[type="text"] {
-            flex: 1;
-            padding: 12px;
-            border: none;
-            border-radius: 6px;
-            background: #333;
-            color: #fff;
-            font-size: 16px;
-        }
-        
-        button {
-            padding: 12px 20px;
-            background: #ff0000;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 500;
-        }
-        
-        button:hover {
-            background: #cc0000;
-        }
-        
-        .list {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-        }
-        
-        .list li {
-            background: #1f1f1f;
-            margin-bottom: 8px;
-            padding: 12px;
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-        
-        .list li a {
-            flex: 1;
-            color: #fff;
-            text-decoration: none;
-            font-size: 15px;
-            line-height: 1.4;
-        }
-        
-        .list li a:hover {
-            color: #ff0000;
-        }
-        
-        .delete-btn {
-            background: #333;
-            color: #ff4444;
-            padding: 6px 12px;
-            border-radius: 4px;
-            text-decoration: none;
-            font-size: 14px;
-        }
-        
-        .controls {
-            display: flex;
-            gap: 10px;
-            margin: 15px 0;
-            flex-wrap: wrap;
-        }
-        
-        .info {
-            font-size: 14px;
-            color: #aaa;
-            margin-bottom: 15px;
-        }
-        
-        .empty {
-            text-align: center;
-            color: #666;
-            padding: 40px 20px;
-        }
-        
-        /* Mobile friendly */
-        @media (max-width: 480px) {
-            .container {
-                padding: 10px;
-            }
-            h1 {
-                font-size: 1.2rem;
-            }
-        }
+        body { font-family: Arial, sans-serif; background:#0f0f0f; color:#fff; margin:0; padding:0; }
+        .container { padding: 15px; max-width: 100%; }
+        .player { position:relative; padding-top:56.25%; background:#000; margin:15px 0; border-radius:8px; overflow:hidden; }
+        .player iframe { position:absolute; top:0; left:0; width:100%; height:100%; }
+        form { display:flex; gap:8px; margin:15px 0; }
+        input[type=text] { flex:1; padding:14px; border:none; border-radius:6px; background:#333; color:white; font-size:16px; }
+        button { padding:14px 20px; background:#ff0000; color:white; border:none; border-radius:6px; }
+        .list li { background:#1f1f1f; margin:8px 0; padding:12px; border-radius:8px; display:flex; align-items:center; }
+        .list a { flex:1; color:#fff; text-decoration:none; }
+        .delete { color:#ff4444; text-decoration:none; padding:6px 12px; background:#333; border-radius:4px; }
     </style>
 </head>
 <body>
-    <header>
-        <h1>🎵 YouTube Playlist</h1>
-        <p style="margin:5px 0 0;color:#aaa;font-size:14px;">Chơi nhạc khi tắt màn hình (Safari iPhone)</p>
-    </header>
-    
-    <div class="container">
-        <!-- Player -->
-        <?php if (!empty($current_video_id)): ?>
-            <div class="player-container">
-                <iframe 
-                    src="https://www.youtube-nocookie.com/embed/<?= htmlspecialchars($current_video_id) ?>?autoplay=1&rel=0&modestbranding=1" 
-                    frameborder="0" 
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-                    allowfullscreen>
-                </iframe>
-            </div>
-            
-            <div class="controls">
-                <?php if ($current_id > 0): ?>
-                    <a href="?play=<?= $current_id - 1 ?>" style="background:#333;color:white;padding:10px 16px;border-radius:6px;text-decoration:none;">◀ Trước</a>
-                <?php endif; ?>
-                
-                <?php if ($current_id < count($playlist) - 1): ?>
-                    <a href="?play=<?= $current_id + 1 ?>" style="background:#ff0000;color:white;padding:10px 16px;border-radius:6px;text-decoration:none;">Tiếp ▶</a>
-                <?php endif; ?>
-            </div>
-        <?php else: ?>
-            <div class="empty">
-                <p>Chưa có bài hát nào. Thêm link YouTube để bắt đầu!</p>
-            </div>
-        <?php endif; ?>
-        
-        <!-- Form thêm link -->
-        <form method="POST">
-            <input type="text" name="add_url" placeholder="Dán link YouTube (youtube.com hoặc youtu.be)" required>
-            <button type="submit">Thêm</button>
-        </form>
-        
-        <div class="info">
-            📝 Danh sách bài hát (<?= count($playlist) ?> bài) - Lưu trong dsbaihat.txt
-            <br><small>Sử dụng Safari → Request Desktop Website để dễ chơi nền hơn khi tắt màn hình.</small>
+<div class="container">
+    <h1 style="text-align:center;">🎵 YouTube Playlist</h1>
+
+    <?php if (!empty($success) || isset($_GET['success'])): ?>
+        <p style="background:#004d00; padding:10px; border-radius:6px;"><?= $success ?? '✅ Đã thêm!' ?></p>
+    <?php endif; ?>
+
+    <!-- Player -->
+    <?php 
+    $play_index = isset($_GET['play']) ? (int)$_GET['play'] : 0;
+    $current_url = $playlist[$play_index] ?? ($playlist[0] ?? '');
+    $vid = get_youtube_id($current_url);
+    if ($vid): 
+    ?>
+        <div class="player">
+            <iframe src="https://www.youtube-nocookie.com/embed/<?= htmlspecialchars($vid) ?>?autoplay=1&rel=0" 
+                    frameborder="0" allowfullscreen allow="autoplay"></iframe>
         </div>
-        
-        <!-- Danh sách -->
-        <ul class="list">
-            <?php if (empty($playlist)): ?>
-                <li class="empty">Danh sách trống</li>
-            <?php else: ?>
-                <?php foreach ($playlist as $i => $url): ?>
-                    <?php 
-                    $title = get_youtube_title($url);
-                    $is_playing = ($i === $current_id);
-                    ?>
-                    <li <?= $is_playing ? 'style="border:2px solid #ff0000;"' : '' ?>>
-                        <a href="?play=<?= $i ?>">
-                            <?= $is_playing ? '▶ ' : '' ?>
-                            <?= htmlspecialchars($title) ?>
-                        </a>
-                        <a href="?delete=<?= $i ?>" class="delete-btn" onclick="return confirm('Xóa bài này?')">Xóa</a>
-                    </li>
-                <?php endforeach; ?>
-            <?php endif; ?>
-        </ul>
-        
-        <div style="margin-top:30px;text-align:center;color:#666;font-size:13px;">
-            <p>Pure PHP • Mobile friendly</p>
-            <p>Để chơi nền: Mở Safari → Request Desktop Website → Play → PiP hoặc Control Center</p>
-        </div>
-    </div>
+    <?php endif; ?>
+
+    <!-- Form thêm -->
+    <form method="POST" action="">
+        <input type="text" name="add_url" placeholder="Dán link YouTube vào đây..." required>
+        <button type="submit">➕ Thêm</button>
+    </form>
+
+    <h3>Danh sách bài hát (<?= count($playlist) ?>)</h3>
+    <ul class="list">
+        <?php foreach ($playlist as $i => $url): ?>
+            <li>
+                <a href="?play=<?= $i ?>">
+                    <?= get_youtube_title($url) ?>
+                </a>
+                <a href="?delete=<?= $i ?>" class="delete" onclick="return confirm('Xóa bài này?')">Xóa</a>
+            </li>
+        <?php endforeach; ?>
+    </ul>
+
+    <p style="text-align:center; color:#888; margin-top:30px; font-size:14px;">
+        💡 Mẹo: Trên Safari iPhone → Nhấn <b>aA</b> → Request Desktop Website
+    </p>
+</div>
 </body>
 </html>
